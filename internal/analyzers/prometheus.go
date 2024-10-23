@@ -166,7 +166,7 @@ func checkClusterRoleRules(crb v1.ClusterRoleBinding, cr *v1.ClusterRole) error 
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("Multiple errors found:\n%s", strings.Join(errs, "\n"))
+		return fmt.Errorf("multiple errors found:\n%s", strings.Join(errs, "\n"))
 	}
 	return nil
 }
