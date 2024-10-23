@@ -118,34 +118,34 @@ func checkClusterRoleRules(crb v1.ClusterRoleBinding, cr *v1.ClusterRole) error 
 
 	for _, rule := range cr.Rules {
 		for _, resource := range rule.Resources {
-			hasGet := false
+			found := false
 			if resource == "configmaps" {
 				for _, verb := range rule.Verbs {
 					if verb == "get" {
-						hasGet = true
+						found = true
 						break
 					}
 				}
-				if !hasGet {
+				if !found {
 					errs = append(errs, fmt.Sprintf("ClusterRole %s does not include 'configmaps' with 'get' in its verbs", crb.RoleRef.Name))
 				}
-			} else {
-				for range rule.APIGroups {
-					for _, requiredVerb := range verbsToCheck {
-						found := false
-						for _, verb := range rule.Verbs {
-							if verb == requiredVerb {
-								found = true
-								break
-							}
-						}
-						if !found {
-							missingVerbs = append(missingVerbs, requiredVerb)
+				continue
+			}
+			for range rule.APIGroups {
+				for _, requiredVerb := range verbsToCheck {
+					found := false
+					for _, verb := range rule.Verbs {
+						if verb == requiredVerb {
+							found = true
+							break
 						}
 					}
-					if len(missingVerbs) > 0 {
-						errs = append(errs, fmt.Sprintf("ClusterRole %s is missing necessary verbs for APIGroups: %v", crb.RoleRef.Name, missingVerbs))
+					if !found {
+						missingVerbs = append(missingVerbs, requiredVerb)
 					}
+				}
+				if len(missingVerbs) > 0 {
+					errs = append(errs, fmt.Sprintf("ClusterRole %s is missing necessary verbs for APIGroups: %v", crb.RoleRef.Name, missingVerbs))
 				}
 			}
 		}
