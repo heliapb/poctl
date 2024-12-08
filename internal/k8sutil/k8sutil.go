@@ -22,10 +22,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 	monitoringclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
+	v1 "k8s.io/api/rbac/v1"
 	apiv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiExtensions "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -37,7 +39,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	v1 "k8s.io/api/rbac/v1"
 )
 
 var ApplyOption = metav1.ApplyOptions{
@@ -157,4 +158,64 @@ func IsServiceAccountBoundToRoleBindingList(clusterRoleBindings *v1.ClusterRoleB
 		}
 	}
 	return false
+}
+
+func CheckPrometheusClusterRoleRules(crb v1.ClusterRoleBinding, cr *v1.ClusterRole) error {
+	var errs []string
+	verbsToCheck := []string{"get", "list", "watch"}
+	missingVerbs := []string{}
+
+	for _, rule := range cr.Rules {
+		for _, resource := range rule.Resources {
+			found := false
+			if resource == "configmaps" {
+				for _, verb := range rule.Verbs {
+					if verb == "get" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					errs = append(errs, fmt.Sprintf("ClusterRole %s does not include 'configmaps' with 'get' in its verbs", crb.RoleRef.Name))
+				}
+				continue
+			}
+			for range rule.APIGroups {
+				for _, requiredVerb := range verbsToCheck {
+					found := false
+					for _, verb := range rule.Verbs {
+						if verb == requiredVerb {
+							found = true
+							break
+						}
+					}
+					if !found {
+						missingVerbs = append(missingVerbs, requiredVerb)
+					}
+				}
+				if len(missingVerbs) > 0 {
+					errs = append(errs, fmt.Sprintf("ClusterRole %s is missing necessary verbs for APIGroups: %v", crb.RoleRef.Name, missingVerbs))
+				}
+			}
+		}
+		for _, nonResource := range rule.NonResourceURLs {
+			if nonResource == "/metrics" {
+				hasGet := false
+				for _, verb := range rule.Verbs {
+					if verb == "get" {
+						hasGet = true
+						break
+					}
+				}
+				if !hasGet {
+					errs = append(errs, fmt.Sprintf("ClusterRole %s does not include 'get' verb for NonResourceURL '/metrics'", crb.RoleRef.Name))
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("multiple errors found:\n%s", strings.Join(errs, "\n"))
+	}
+	return nil
 }
